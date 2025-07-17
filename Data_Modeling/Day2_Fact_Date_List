@@ -1,0 +1,265 @@
+CREATE TABLE Jaswanthv.web_users_cumulated_v4 (
+user_id BIGINT,
+dates_active ARRAY(DATE),
+date DATE
+)
+WITH
+(format = 'parquet',
+partitioning = Array['date']
+)
+
+-- Loading Cumulative Table
+INSERT INTO
+  Jaswanthv.web_users_cumulated_v4
+WITH
+  yesterday AS (
+    SELECT
+      *
+    FROM
+      Jaswanthv.web_users_cumulated_v4
+    WHERE
+      DATE = DATE('2022-12-31')
+  ),
+  today AS (
+    SELECT
+      user_id,
+      CAST(date_trunc('day', event_time) AS DATE) AS event_date,
+      COUNT(1)
+    FROM
+      bootcamp.web_events
+    WHERE
+      date_trunc('day', event_time) = DATE('2023-01-01')
+    GROUP BY
+      user_id,
+      CAST(date_trunc('day', event_time) AS DATE)
+  )
+SELECT
+  COALESCE(y.user_id, t.user_id) AS user_id,
+  CASE
+    WHEN y.dates_active IS NOT NULL THEN ARRAY[t.event_date] || y.dates_active
+    ELSE ARRAY[t.event_date]
+  END AS dates_active,
+  DATE('2023-01-01') AS DATE
+FROM
+  yesterday y
+  FULL OUTER JOIN today t ON y.user_id = t.user_id
+  |
+  |
+  |
+
+ INSERT INTO
+   Jaswanthv.web_users_cumulated_v4
+ WITH
+   yesterday AS (
+     SELECT
+       *
+     FROM
+       Jaswanthv.web_users_cumulated_v4
+     WHERE
+       DATE = DATE('2023-01-06')
+   ),
+   today AS (
+     SELECT
+       user_id,
+       CAST(date_trunc('day', event_time) AS DATE) AS event_date,
+       COUNT(1)
+     FROM
+       bootcamp.web_events
+     WHERE
+       date_trunc('day', event_time) = DATE('2023-01-07')
+     GROUP BY
+       user_id,
+       CAST(date_trunc('day', event_time) AS DATE)
+   )
+ SELECT
+   COALESCE(y.user_id, t.user_id) AS user_id,
+   CASE
+     WHEN y.dates_active IS NOT NULL THEN ARRAY[t.event_date] || y.dates_active
+     ELSE ARRAY[t.event_date]
+   END AS dates_active,
+   DATE('2023-01-07') AS DATE
+ FROM
+   yesterday y
+   FULL OUTER JOIN today t ON y.user_id = t.user_id
+
+
+with today As
+(
+Select * from Jaswanthv.web_users_cumulated_v4
+where date = DATE('2023-01-07')
+)
+Select
+user_id,
+SUM(
+CASE
+  WHEN CONTAINS(dates_active, sequence_date) Then POW(2, 32 - DATE_DIFF('day',sequence_date, DATE))
+Else 0
+End
+) AS BIGINT
+from
+today CROSS JOIN UNNEST(SEQUENCE(DATE('2023-01-01'),DATE('2023-01-07'))) as t(sequence_date)
+Group by user_id
+
+with today As
+(
+Select * from Jaswanthv.web_users_cumulated_v4
+where date = DATE('2023-01-07')
+),
+date_list_int As (
+Select
+user_id,
+CAST(
+SUM(
+CASE
+  WHEN CONTAINS(dates_active, sequence_date) Then POW(2, 31 - DATE_DIFF('day',sequence_date, DATE))
+Else 0
+End
+) AS BIGINT
+) As history_int
+from
+today CROSS JOIN UNNEST(SEQUENCE(DATE('2023-01-01'),DATE('2023-01-07'))) as t(sequence_date)
+Group by user_id
+)
+Select *,
+TO_BASE(history_int,2) As history_in_binary
+from date_list_int
+
+with today As
+(
+Select * from Jaswanthv.web_users_cumulated_v4
+where date = DATE('2023-01-07')
+),
+date_list_int As (
+Select
+user_id,
+CAST(
+SUM(
+CASE
+  WHEN CONTAINS(dates_active, sequence_date) Then POW(2, 30 - DATE_DIFF('day',sequence_date, DATE))
+Else 0
+End
+) AS BIGINT
+) As history_int
+from
+today CROSS JOIN UNNEST(SEQUENCE(DATE('2023-01-01'),DATE('2023-01-07'))) as t(sequence_date)
+Group by user_id
+)
+Select *,
+TO_BASE(history_int,2) As history_in_binary,
+TO_BASE(FROM_BASE('11111110000000000000000000000000', 2),2) AS weekly_base,
+BIT_COUNT(history_int,32) As num_days_active
+from date_list_int
+
+with today As
+(
+Select * from Jaswanthv.web_users_cumulated_v4
+where date = DATE('2023-01-07')
+),
+date_list_int As (
+Select
+user_id,
+CAST(
+SUM(
+CASE
+  WHEN CONTAINS(dates_active, sequence_date) Then POW(2, 30 - DATE_DIFF('day',sequence_date, DATE))
+Else 0
+End
+) AS BIGINT
+) As history_int
+from
+today CROSS JOIN UNNEST(SEQUENCE(DATE('2023-01-01'),DATE('2023-01-07'))) as t(sequence_date)
+Group by user_id
+)
+Select *,
+TO_BASE(history_int,2) As history_in_binary,
+TO_BASE(FROM_BASE('11111110000000000000000000000000', 2),2) AS weekly_base,
+BIT_COUNT(history_int,32) As num_days_active,
+BIT_COUNT(
+BITWISE_AND(
+    history_int,
+    FROM_BASE('11111110000000000000000000000000', 2)
+  ),32) > 0 AS is_weekly_active
+from date_list_int
+
+with today As
+(
+Select * from Jaswanthv.web_users_cumulated_v4
+where date = DATE('2023-01-07')
+),
+date_list_int As (
+Select
+user_id,
+CAST(
+SUM(
+CASE
+  WHEN CONTAINS(dates_active, sequence_date) Then POW(2, 30 - DATE_DIFF('day',sequence_date, DATE))
+Else 0
+End
+) AS BIGINT
+) As history_int
+from
+today CROSS JOIN UNNEST(SEQUENCE(DATE('2023-01-01'),DATE('2023-01-07'))) as t(sequence_date)
+Group by user_id
+)
+Select *,
+TO_BASE(history_int,2) As history_in_binary,
+TO_BASE(FROM_BASE('11111110000000000000000000000000', 2),2) AS weekly_base,
+BIT_COUNT(history_int,32) As num_days_active,
+BIT_COUNT(
+BITWISE_AND(
+    history_int,
+    FROM_BASE('11111110000000000000000000000000', 2)
+  ),32) > 0 AS is_weekly_active,
+  BIT_COUNT(
+    BITWISE_AND(
+      history_int,
+      FROM_BASE('11100000000000000000000000000000', 2)
+    ),
+    32
+  ) > 0 AS is_active_last_three_days
+from date_list_int
+
+with today As
+(
+Select * from Jaswanthv.web_users_cumulated_v4
+where date = DATE('2023-01-07')
+),
+date_list_int As (
+Select
+user_id,
+CAST(
+SUM(
+CASE
+  WHEN CONTAINS(dates_active, sequence_date) Then POW(2, 30 - DATE_DIFF('day',sequence_date, DATE))
+Else 0
+End
+) AS BIGINT
+) As history_int
+from
+today CROSS JOIN UNNEST(SEQUENCE(DATE('2023-01-01'),DATE('2023-01-07'))) as t(sequence_date)
+Group by user_id
+)
+Select *,
+TO_BASE(history_int,2) As history_in_binary,
+TO_BASE(FROM_BASE('11111110000000000000000000000000', 2),2) AS weekly_base,
+BIT_COUNT(history_int,32) As num_days_active,
+BIT_COUNT(
+BITWISE_AND(
+    history_int,
+    FROM_BASE('11111110000000000000000000000000', 2)
+  ),32) > 0 AS is_weekly_active,
+  BIT_COUNT(
+    BITWISE_AND(
+      history_int,
+      FROM_BASE('11100000000000000000000000000000', 2)
+    ),
+    32
+  ) > 0 AS is_active_last_three_days,
+  BIT_COUNT(
+    BITWISE_AND(
+      history_int,
+      FROM_BASE('00000001111111000000000000000000', 2)
+    ),
+    32
+  ) > 0 AS is_weekly_active_last_week
+from date_list_int

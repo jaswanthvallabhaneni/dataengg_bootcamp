@@ -1,0 +1,319 @@
+CREATE OR REPLACE TABLE Jaswanthv.daily_web_metrics_v4(
+  user_id BIGINT,
+  metric_name VARCHAR,
+  metric_value BIGINT,
+  date DATE
+  ) WITH
+  (
+  FORMAT = 'PARQUET',
+  partitioning = ARRAY['metric_name','date']
+  )
+
+
+-- Load daily_metric TABLE
+
+INSERT INTO
+  Jaswanthv.daily_web_metrics_v4
+SELECT
+  user_id,
+  'visited_signup' AS metric_name,
+  COUNT(
+    CASE
+      WHEN url = '/signup' THEN 1
+    END
+  ) AS metric_value,
+  CAST(event_time AS DATE) AS DATE
+FROM
+  bootcamp.web_events
+GROUP BY
+  user_id,
+  CAST(event_time AS DATE)
+
+  SELECT
+    DATE,
+    metric_name,
+    SUM(metric_value)
+  FROM
+    Jaswanthv.daily_web_metrics_v4
+  GROUP BY
+    DATE,
+    metric_name
+  ORDER BY
+    3 DESC
+
+-- Create monthly_array_web_metrics
+CREATE TABLE Jaswanthv.monthly_array_web_metrics_v4 (
+  user_id BIGINT,
+  metric_name VARCHAR,
+  metric_array ARRAY(INTEGER),
+  month_start VARCHAR
+)
+WITH
+  (
+    FORMAT = 'PARQUET',
+    partitioning = ARRAY['metric_name', 'month_start']
+  )
+
+-- Queries to find if any entries are coming for first time
+
+WITH
+  yesterday AS (
+    SELECT
+      *
+    FROM
+      Jaswanthv.monthly_array_web_metrics_v4
+    WHERE
+      month_start = '2023-08-01'
+  ),
+  today AS (
+    SELECT
+      *
+    FROM
+      Jaswanthv.daily_web_metrics_v4
+    WHERE
+      DATE = DATE('2023-08-02')
+  )
+SELECT
+  COALESCE(t.user_id, y.user_id) AS user_id,
+  COALESCE(t.metric_name, y.metric_name) AS metric_name,
+  y.metric_array || ARRAY[t.metric_value] AS metric_array,
+  '2023-08-01' AS month_start
+FROM
+  today t
+  FULL OUTER JOIN yesterday y ON t.user_id = y.user_id
+  AND t.metric_name = y.metric_name
+WHERE
+  CARDINALITY(y.metric_array || ARRAY[t.metric_value]) = 1
+
+
+  WITH
+    yesterday AS (
+      SELECT
+        *
+      FROM
+        Jaswanthv.monthly_array_web_metrics_v4
+      WHERE
+        month_start = '2023-08-01'
+    ),
+    today AS (
+      SELECT
+        *
+      FROM
+        Jaswanthv.daily_web_metrics_v4
+      WHERE
+        DATE = DATE('2023-08-02')
+    )
+  SELECT
+    COALESCE(t.user_id, y.user_id) AS user_id,
+    COALESCE(t.metric_name, y.metric_name) AS metric_name,
+    COALESCE(y.metric_array, ARRAY[]) || ARRAY[t.metric_value] AS metric_array,
+    '2023-08-01' AS month_start
+  FROM
+    today t
+    FULL OUTER JOIN yesterday y ON t.user_id = y.user_id
+    AND t.metric_name = y.metric_name
+  WHERE
+    CARDINALITY(
+      COALESCE(y.metric_array, ARRAY[]) || ARRAY[t.metric_value]
+    ) = 1
+
+-- Logic to append nulls for prior days before the metric came in
+
+WITH
+  yesterday AS (
+    SELECT
+      *
+    FROM
+      Jaswanthv.monthly_array_web_metrics_v4
+    WHERE
+      month_start = '2023-08-01'
+  ),
+  today AS (
+    SELECT
+      *
+    FROM
+      Jaswanthv.daily_web_metrics_v4
+    WHERE
+      DATE = DATE('2023-08-02')
+  )
+SELECT
+  COALESCE(t.user_id, y.user_id) AS user_id,
+  COALESCE(t.metric_name, y.metric_name) AS metric_name,
+  COALESCE(
+    y.metric_array,
+    REPEAT(
+      NULL,
+      CAST(
+        DATE_DIFF('day', DATE('2023-08-01'), t.date) AS INTEGER
+      )
+    )
+  ) || ARRAY[t.metric_value] AS metric_array,
+  '2023-08-01' AS month_start
+FROM
+  today t
+  FULL OUTER JOIN yesterday y ON t.user_id = y.user_id
+  AND t.metric_name = y.metric_name
+WHERE
+  CARDINALITY(
+    COALESCE(y.metric_array, ARRAY[]) || ARRAY[t.metric_value]
+  ) = 1
+
+-- Inserting the data into monthly aggregates
+
+INSERT INTO
+  Jaswanthv.monthly_array_web_metrics_v4
+WITH
+  yesterday AS (
+    SELECT
+      *
+    FROM
+      Jaswanthv.monthly_array_web_metrics_v4
+    WHERE
+      month_start = '2023-08-01'
+  ),
+  today AS (
+    SELECT
+      *
+    FROM
+      Jaswanthv.daily_web_metrics_v4
+    WHERE
+      DATE = DATE('2023-08-02')
+  )
+SELECT
+  COALESCE(t.user_id, y.user_id) AS user_id,
+  COALESCE(t.metric_name, y.metric_name) AS metric_name,
+  COALESCE(
+    y.metric_array,
+    REPEAT(
+      NULL,
+      CAST(
+        DATE_DIFF('day', DATE('2023-08-01'), t.date) AS INTEGER
+      )
+    )
+  ) || ARRAY[t.metric_value] AS metric_array,
+  '2023-08-01' AS month_start
+FROM
+  today t
+  FULL OUTER JOIN yesterday y ON t.user_id = y.user_id
+  AND t.metric_name = y.metric_name
+
+
+-- different ways to query this aggregated metrics
+SELECT
+  user_id % 2 AS is_user_id_odd,
+  metric_name,
+  SUM(metric_array[1]) AS data_for_aug_1,
+  SUM(metric_array[2]) AS data_for_aug_2,
+  SUM(metric_array[3]) AS data_for_aug_3
+FROM
+  Jaswanthv.monthly_array_web_metrics_v4
+GROUP BY
+  1,
+  2
+
+  SELECT
+    user_id % 2 AS is_user_id_odd,
+    metric_name,
+    month_start,
+    ARRAY[
+      SUM(metric_array[1]),
+      SUM(metric_array[2]),
+      SUM(metric_array[3])
+    ]
+  FROM
+    Jaswanthv.monthly_array_web_metrics_v4
+  GROUP BY
+    1,
+    2,
+    3
+
+    WITH
+      aggregated AS (
+        SELECT
+          user_id % 2 AS is_user_id_odd,
+          metric_name,
+          month_start,
+          ARRAY[
+            SUM(metric_array[1]),
+            SUM(metric_array[2]),
+            SUM(metric_array[3])
+          ] AS agg_array
+        FROM
+          Jaswanthv.monthly_array_web_metrics_v4
+        GROUP BY
+          1,
+          2,
+          3
+      )
+    SELECT
+      *
+    FROM
+      aggregated
+      CROSS JOIN UNNEST (agg_array)
+    WITH
+      ORDINALITY AS t (VALUE, INDEX)
+
+      WITH
+        aggregated AS (
+          SELECT
+            user_id % 2 AS is_user_id_odd,
+            metric_name,
+            month_start,
+            ARRAY[
+              SUM(metric_array[1]),
+              SUM(metric_array[2]),
+              SUM(metric_array[3])
+            ] AS agg_array
+          FROM
+            Jaswanthv.monthly_array_web_metrics_v4
+          GROUP BY
+            1,
+            2,
+            3
+        )
+      SELECT
+        *,
+        DATE_ADD('day', INDEX - 1, DATE(month_start)) AS DATE
+      FROM
+        aggregated
+        CROSS JOIN UNNEST (agg_array)
+      WITH
+        ORDINALITY AS t (VALUE, INDEX)
+
+        WITH
+          aggregated AS (
+            SELECT
+              user_id % 2 AS is_user_id_odd,
+              metric_name,
+              month_start,
+              ARRAY[
+                SUM(metric_array[1]),
+                SUM(metric_array[2]),
+                SUM(metric_array[3])
+              ] AS agg_array
+            FROM
+              Jaswanthv.monthly_array_web_metrics_v4
+            GROUP BY
+              1,
+              2,
+              3
+          )
+        SELECT
+          is_user_id_odd,
+          metric_name,
+          DATE_ADD('day', INDEX - 1, DATE(month_start)) AS DATE,
+          VALUE
+        FROM
+          aggregated
+          CROSS JOIN UNNEST (agg_array)
+        WITH
+          ORDINALITY AS t (VALUE, INDEX)
+
+
+-- Query to delete older partition
+
+After inserting Day 4 metrics run below.
+
+DELETE FROM Jaswanthv.monthly_array_web_metrics_v4
+WHERE
+  CARDINALITY(metric_array) < 3
